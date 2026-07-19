@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.22)
 cmake_policy(SET CMP0169 OLD)   # allow FetchContent_Populate
 cmake_policy(SET CMP0175 OLD)   # suppress add_custom_command DEPENDS warning from JUCE
 
-project(Pulse VERSION 1.0.0)
+project(Pulse VERSION 1.0.1)
 
 # Use ccache for compiler cache if available
 find_program(CCACHE_PROGRAM ccache)

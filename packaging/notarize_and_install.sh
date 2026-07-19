@@ -25,7 +25,7 @@ KEYCHAIN_PROFILE="Pulse Notary"
 # Plugin metadata (from CMakeLists)
 BUNDLE_ID="com.MarkHammond.Pulse"
 PRODUCT_NAME="Pulse"
-VERSION="1.0.0"
+VERSION="1.0.1"
 ARTIFACT_NAME="Pulse-${VERSION}"
 
 # Paths to built artifacts

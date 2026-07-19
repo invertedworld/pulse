@@ -31,7 +31,7 @@ private:
     juce::TextButton syncButton_ { "SYNC" };
     juce::Slider     amountKnob_;
 
-    juce::Label waveLabel_, widthLabel_, rateLabel_, syncLabel_, amountLabel_;
+    juce::Label waveLabel_, widthLabel_, rateLabel_, amountLabel_;
     juce::Label rateValue_;   // shows "1.00 Hz" or "1/4" under the rate knob
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   widthAtt_;

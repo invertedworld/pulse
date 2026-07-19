@@ -32,13 +32,18 @@ public:
 
     void drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
                           float pos, float startAngle, float endAngle,
-                          juce::Slider&) override
+                          juce::Slider& slider) override
     {
         auto bounds = juce::Rectangle<int>(x, y, width, height).toFloat().reduced(6.0f);
         const float radius = juce::jmin(bounds.getWidth(), bounds.getHeight()) * 0.5f;
         const auto centre = bounds.getCentre();
         const float angle = startAngle + pos * (endAngle - startAngle);
         const float track = radius * 0.26f;
+
+        // A greyed-out knob (e.g. Width on a non-square wave) keeps its shape
+        // but loses the accent colour, so it reads as inactive.
+        const float alpha = slider.isEnabled() ? 1.0f : 0.28f;
+        const juce::Colour accent = kAccent.withMultipliedAlpha(alpha);
 
         // Track arc
         juce::Path bg;
@@ -51,7 +56,7 @@ public:
         juce::Path fg;
         fg.addCentredArc(centre.x, centre.y, radius - track, radius - track,
                          0.0f, startAngle, angle, true);
-        g.setColour(kAccent);
+        g.setColour(accent);
         g.strokePath(fg, juce::PathStrokeType(track, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
         // Knob face
@@ -64,7 +69,7 @@ public:
         // Pointer
         juce::Path p;
         p.addRoundedRectangle(-1.5f, -knobR + 3.0f, 3.0f, knobR * 0.55f, 1.5f);
-        g.setColour(kAccent);
+        g.setColour(accent);
         g.fillPath(p, juce::AffineTransform::rotation(angle).translated(centre.x, centre.y));
     }
 };
@@ -167,17 +172,38 @@ public:
 
     static constexpr float kGap = 6.0f;
 
+    // Left-to-right display order of the tiles. Independent of the Wave enum /
+    // parameter values, so re-ordering here never breaks saved sessions.
+    static constexpr int kSlotCount = static_cast<int>(pulse::Wave::numWaves);
+    static constexpr int kOrder[kSlotCount] = {
+        static_cast<int>(pulse::Wave::square),
+        static_cast<int>(pulse::Wave::sampleHold),
+        static_cast<int>(pulse::Wave::sine),
+        static_cast<int>(pulse::Wave::triangle),
+        static_cast<int>(pulse::Wave::sawUp),
+        static_cast<int>(pulse::Wave::sawDown),
+    };
+
+    // Centre of a tile, relative to this component's left edge. Used by the
+    // editor to line the knobs up under specific icons.
+    static float slotCentreX(int slot, float totalWidth) noexcept
+    {
+        const float cellW = (totalWidth - kGap * (kSlotCount - 1)) / static_cast<float>(kSlotCount);
+        return static_cast<float>(slot) * (cellW + kGap) + cellW * 0.5f;
+    }
+
     void paint(juce::Graphics& g) override
     {
-        const int   n   = static_cast<int>(pulse::Wave::numWaves);
+        const int   n   = kSlotCount;
         const int   sel = static_cast<int>(vts_.getRawParameterValue("wave")->load());
         const float pw  = vts_.getRawParameterValue("pw")->load() / 100.0f;
         const float cellW = (getWidth() - kGap * (n - 1)) / static_cast<float>(n);
         const float hh = (float) getHeight();
 
-        for (int i = 0; i < n; ++i)
+        for (int slot = 0; slot < n; ++slot)
         {
-            juce::Rectangle<float> cell(i * (cellW + kGap), 0.0f, cellW, hh);
+            const int i = kOrder[slot];
+            juce::Rectangle<float> cell(static_cast<float>(slot) * (cellW + kGap), 0.0f, cellW, hh);
             const bool selected = (i == sel);
 
             // Green-on-black: selected tile gets a green glow + border, others stay dark.
@@ -239,9 +265,10 @@ public:
 
     void mouseDown(const juce::MouseEvent& e) override
     {
-        const int   n   = static_cast<int>(pulse::Wave::numWaves);
+        const int   n   = kSlotCount;
         const float cellW = (getWidth() - kGap * (n - 1)) / static_cast<float>(n);
-        const int   i = juce::jlimit(0, n - 1, static_cast<int>(e.position.x / (cellW + kGap)));
+        const int   slot = juce::jlimit(0, n - 1, static_cast<int>(e.position.x / (cellW + kGap)));
+        const int   i = kOrder[slot];
         if (auto* param = vts_.getParameter("wave"))
         {
             param->beginChangeGesture();
@@ -315,7 +342,6 @@ PulseAudioProcessorEditor::PulseAudioProcessorEditor(PulseAudioProcessor& p)
     setupLabel(waveLabel_,   "WAVE");
     setupLabel(widthLabel_,  "WIDTH");
     setupLabel(rateLabel_,   "RATE");
-    setupLabel(syncLabel_,   "SYNC");
     setupLabel(amountLabel_, "AMOUNT");
 
     rateValue_.setJustificationType(juce::Justification::centred);
@@ -323,7 +349,10 @@ PulseAudioProcessorEditor::PulseAudioProcessorEditor(PulseAudioProcessor& p)
     rateValue_.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
     addAndMakeVisible(rateValue_);
 
-    setSize(560, 470);
+    syncButton_.setButtonText("SYNC");
+    syncButton_.setColour(juce::TextButton::textColourOffId, kDim);
+
+    setSize(560, 490);
     startTimerHz(60);
 }
 
@@ -359,33 +388,39 @@ void PulseAudioProcessorEditor::resized()
     waveLabel_.setBounds(r.removeFromTop(16));
     waveSelector_->setBounds(r.removeFromTop(54));
 
-    // Knob row: Width | Rate | Sync | Amount
+    // Knob row. Width sits under the first wave tile (square), Amount under the
+    // last (ramp down), and Rate is centred between the two.
     r.removeFromTop(14);
     auto row = r;
-    const int cellW = row.getWidth() / 4;
-    auto widthCell  = row.removeFromLeft(cellW);
-    auto rateCell   = row.removeFromLeft(cellW);
-    auto syncCell   = row.removeFromLeft(cellW);
-    auto amountCell = row;
 
-    auto placeLabelTop = [](juce::Rectangle<int> cell, juce::Label& label) {
-        label.setBounds(cell.removeFromTop(16));
-        return cell;
+    const auto sel = waveSelector_->getBounds();
+    const int widthCx  = sel.getX() + juce::roundToInt(WaveSelector::slotCentreX(0, (float) sel.getWidth()));
+    const int amountCx = sel.getX() + juce::roundToInt(WaveSelector::slotCentreX(WaveSelector::kSlotCount - 1,
+                                                                                (float) sel.getWidth()));
+    const int rateCx   = (widthCx + amountCx) / 2;
+
+    constexpr int kCellW  = 96;
+    constexpr int kLabelH = 16;
+    constexpr int kKnobH  = 72;
+
+    auto column = [&](int centreX) {
+        return juce::Rectangle<int>(centreX - kCellW / 2, row.getY(), kCellW, row.getHeight());
     };
 
-    { auto c = placeLabelTop(widthCell, widthLabel_);
-      widthKnob_.setBounds(c); }
+    { auto c = column(widthCx);
+      widthLabel_.setBounds(c.removeFromTop(kLabelH));
+      widthKnob_.setBounds(c.removeFromTop(kKnobH + 16)); }   // +16 for the value text box
 
-    { auto c = placeLabelTop(rateCell, rateLabel_);
-      rateValue_.setBounds(c.removeFromBottom(18));
-      rateKnob_.setBounds(c); }
+    { auto c = column(amountCx);
+      amountLabel_.setBounds(c.removeFromTop(kLabelH));
+      amountKnob_.setBounds(c.removeFromTop(kKnobH + 16)); }
 
-    { auto c = placeLabelTop(syncCell, syncLabel_);
-      c.removeFromTop(20);
-      syncButton_.setBounds(c.withSizeKeepingCentre(66, 34)); }
-
-    { auto c = placeLabelTop(amountCell, amountLabel_);
-      amountKnob_.setBounds(c); }
+    { auto c = column(rateCx);
+      rateLabel_.setBounds(c.removeFromTop(kLabelH));
+      rateKnob_.setBounds(c.removeFromTop(kKnobH));
+      rateValue_.setBounds(c.removeFromTop(16));
+      c.removeFromTop(6);
+      syncButton_.setBounds(c.withSizeKeepingCentre(52, 22).withY(c.getY())); }
 }
 
 void PulseAudioProcessorEditor::timerCallback()
@@ -400,6 +435,8 @@ void PulseAudioProcessorEditor::timerCallback()
     const bool isSquare = (static_cast<pulse::Wave>(wave) == pulse::Wave::square);
     widthKnob_.setEnabled(isSquare);
     widthLabel_.setColour(juce::Label::textColourId, isSquare ? kDim : kDim.withAlpha(0.4f));
+    widthKnob_.setColour(juce::Slider::textBoxTextColourId, isSquare ? kText : kText.withAlpha(0.3f));
+    widthLabel_.repaint();
 
     // Rate readout: Hz when free, note division when synced.
     const float norm = vts.getRawParameterValue("rate")->load();
