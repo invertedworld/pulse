@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<installer-gui-script minSpecVersion="1">
+    <title>Pulse</title>
+    <organization>com.MarkHammond</organization>
+    <domains enable_localSystem="true"/>
+    <options hostArchitectures="arm64,x86_64"/>
+    <choices-outline>
+        <line choice="vst3"/>
+        <line choice="au"/>
+    </choices-outline>
+    <choice id="vst3" title="VST3" description="VST3 plugin format">
+        <pkg-ref id="com.MarkHammond.Pulse.vst3.pkg"/>
+    </choice>
+    <choice id="au" title="Audio Unit" description="Audio Unit plugin format">
+        <pkg-ref id="com.MarkHammond.Pulse.au.pkg"/>
+    </choice>
+    <pkg-ref id="com.MarkHammond.Pulse.vst3.pkg" version="VERSION_PLACEHOLDER" onConclusion="none">Pulse.vst3.pkg</pkg-ref>
+    <pkg-ref id="com.MarkHammond.Pulse.au.pkg" version="VERSION_PLACEHOLDER" onConclusion="none">Pulse.au.pkg</pkg-ref>
+</installer-gui-script>
