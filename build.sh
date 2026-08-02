@@ -29,13 +29,15 @@ fi
 [[ "$CLEAN_FIRST" == true ]] && cmake --build "$BUILD_DIR" --target clean
 cmake --build "$BUILD_DIR" --config Release
 
-# Deploy to system folders (sudo required)
+# Deploy to user folders (sudo not required).
+# Note: "~" does not expand inside double quotes — use $HOME.
 echo "=== Deploying ==="
-SYS_AU="/Library/Audio/Plug-Ins/Components"
-SYS_VST="/Library/Audio/Plug-Ins/VST3"
-sudo rm -rf "$SYS_AU/Pulse.component"
-sudo cp -R "$BUILD_DIR/Pulse_artefacts/Release/AU/Pulse.component" "$SYS_AU/"
-sudo rm -rf "$SYS_VST/Pulse.vst3"
-sudo cp -R "$BUILD_DIR/Pulse_artefacts/Release/VST3/Pulse.vst3" "$SYS_VST/"
+USER_AU="$HOME/Library/Audio/Plug-Ins/Components"
+USER_VST="$HOME/Library/Audio/Plug-Ins/VST3"
+mkdir -p "$USER_AU" "$USER_VST"
+rm -rf "$USER_AU/Pulse.component"
+cp -R "$BUILD_DIR/Pulse_artefacts/Release/AU/Pulse.component" "$USER_AU/"
+rm -rf "$USER_VST/Pulse.vst3"
+cp -R "$BUILD_DIR/Pulse_artefacts/Release/VST3/Pulse.vst3" "$USER_VST/"
 
 echo "=== Done — Pulse deployed ==="

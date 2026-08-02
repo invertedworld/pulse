@@ -2,7 +2,13 @@
 <installer-gui-script minSpecVersion="1">
     <title>Pulse</title>
     <organization>com.MarkHammond</organization>
-    <domains enable_localSystem="true"/>
+    <!-- Both domains enabled, so Installer shows a Destination Select pane.
+         Choosing "for me only" rewrites each absolute install-location relative
+         to the user's home, so /Library/Audio/Plug-Ins/... becomes
+         ~/Library/Audio/Plug-Ins/... and /Applications becomes ~/Applications.
+         Installing for all users still needs an admin password; installing for
+         the current user only does not. -->
+    <domains enable_currentUserHome="true" enable_localSystem="true"/>
     <options hostArchitectures="arm64,x86_64"/>
     <choices-outline>
         <line choice="vst3"/>

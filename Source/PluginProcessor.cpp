@@ -42,8 +42,41 @@ juce::AudioProcessorValueTreeState::ParameterLayout PulseAudioProcessor::createP
         juce::NormalisableRange<float>(1.0f, 99.0f, 0.1f), 50.0f));
 
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID{"amount", 1}, "Amount",
+        // The ID stays "amount" so existing sessions and automation still bind;
+        // only the display name changed.
+        juce::ParameterID{"amount", 1}, "Amplitude",
         juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 80.0f));
+
+    // Low-pass filter envelope. Bipolar and centred (knob at 12 o'clock) on
+    // zero, which is off. Positive opens the filter with the wave, negative
+    // inverts it so the peak of the wave closes the filter.
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{"filter", 1}, "Filter Env",
+        juce::NormalisableRange<float>(-100.0f, 100.0f, 0.1f), 0.0f));
+
+    // Cutoff is the ceiling the envelope sweeps down from. Fully open by
+    // default, which keeps the plugin transparent until something is dialled in.
+    juce::NormalisableRange<float> cutoffRange(static_cast<float>(pulse::kFiltMinHz),
+                                               static_cast<float>(pulse::kFiltMaxHz));
+    cutoffRange.setSkewForCentre(1000.0f);
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{"cutoff", 1}, "Cutoff", cutoffRange,
+        static_cast<float>(pulse::kFiltMaxHz),
+        juce::AudioParameterFloatAttributes()
+            .withStringFromValueFunction([](float v, int)
+            {
+                // The unit lives in the string rather than in a separate label,
+                // so hosts and the (narrow) text box both read correctly.
+                if (v >= 9950.0f) return juce::String(juce::roundToInt(v / 1000.0f)) + " kHz";
+                if (v >= 1000.0f) return juce::String(v / 1000.0f, 1) + " kHz";
+                return juce::String(juce::roundToInt(v)) + " Hz";
+            })));
+
+    // Whole percent: finer steps would only add noise to a knob this small.
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{"res", 1}, "Resonance",
+        juce::NormalisableRange<float>(0.0f, 100.0f, 1.0f), 0.0f));
 
     return { params.begin(), params.end() };
 }
@@ -67,6 +100,9 @@ void PulseAudioProcessor::prepareToPlay(double sampleRate, int)
     sampleRate_ = sampleRate;
     phase_ = 0.0;
     gainSmoothed_ = 1.0f;
+    filterSmoothed_ = 1.0f;
+    for (auto& f : filters_)
+        f.reset();
 }
 
 void PulseAudioProcessor::releaseResources() {}
@@ -97,6 +133,15 @@ void PulseAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     const bool  sync      = apvts.getRawParameterValue("sync")->load() >= 0.5f;
     const float pw        = apvts.getRawParameterValue("pw")->load() / 100.0f;
     const float depth     = apvts.getRawParameterValue("amount")->load() / 100.0f;
+    const float filtAmt   = apvts.getRawParameterValue("filter")->load() / 100.0f;
+    const float cutoffHz  = apvts.getRawParameterValue("cutoff")->load();
+    const float resNorm   = apvts.getRawParameterValue("res")->load() / 100.0f;
+
+    // Bypassed only when the filter cannot colour anything: no envelope and the
+    // cutoff wide open. That keeps the default settings bit-transparent.
+    const bool   filterOn = std::abs(filtAmt) > 1.0e-4f
+                         || cutoffHz < static_cast<float>(pulse::kFiltMaxHz) - 1.0f;
+    const double resQ     = pulse::resonanceQ(resNorm);
 
     // --- Host transport (for sync) ---
     double bpm = 120.0, ppq = 0.0;
@@ -148,13 +193,46 @@ void PulseAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     for (int ch = 0; ch < numChannels; ++ch)
         chans[static_cast<size_t>(ch)] = buffer.getWritePointer(ch);
 
+    // With the filter off the states are parked so that re-engaging it starts
+    // clean. That is silent because the only way in is through the wide-open
+    // corner — whichever control is moved first, the filter is still a
+    // pass-through at the moment it switches on.
+    const int numFiltChans = juce::jmin(numChannels, kMaxFilterChannels);
+    if (!filterOn)
+    {
+        filterSmoothed_ = 1.0f;
+        for (auto& f : filters_)
+            f.reset();
+    }
+
+    pulse::LowpassCoeffs coeffs;
+
     double phase = phase_;
     float  g = gainSmoothed_;
+    float  fPos = filterSmoothed_;
     for (int i = 0; i < numSamples; ++i)
     {
         const float openness = pulse::waveShape(waveIndex, phase, pw);
         const float target    = (1.0f - depth) + depth * openness;
         g += (target - g) * smoothCoef;
+
+        if (filterOn)
+        {
+            fPos += (pulse::filterEnv(openness, filtAmt) - fPos) * smoothCoef;
+
+            // tan() is far too costly per sample, so the coefficients refresh at
+            // a control rate. Every 8 samples is still ~5.5 kHz at 44.1 kHz —
+            // orders of magnitude above the LFO, and well inside the 1 ms
+            // smoothing so the steps stay inaudible even at high resonance.
+            if ((i & 7) == 0)
+                coeffs.set(pulse::filterCutoffHz(fPos, cutoffHz), resQ, sampleRate_);
+
+            for (int ch = 0; ch < numFiltChans; ++ch)
+            {
+                float* d = chans[static_cast<size_t>(ch)];
+                d[i] = filters_[static_cast<size_t>(ch)].process(coeffs, d[i]);
+            }
+        }
 
         for (int ch = 0; ch < numChannels; ++ch)
             chans[static_cast<size_t>(ch)][i] *= g;
@@ -163,6 +241,7 @@ void PulseAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
     }
     phase_ = phase;
     gainSmoothed_ = g;
+    filterSmoothed_ = fPos;
 
     lfoPhase_.store(phase, std::memory_order_relaxed);
 }

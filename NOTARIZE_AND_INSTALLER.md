@@ -96,7 +96,7 @@ The script will:
 3. Create the final installer with `productbuild`
 4. Submit for notarization with `notarytool --wait` and staple the ticket
 
-Output: `Pulse-1.0.0.pkg` in `packaging/output`.
+Output: `Pulse-1.2.1.pkg` in `packaging/output`.
 
 ---
 
@@ -117,7 +117,7 @@ xcrun notarytool log SUBMISSION_UUID --keychain-profile "Pulse Notary"
 ```bash
 codesign --verify --deep --strict -v "path/to/Pulse.component"
 codesign --verify --deep --strict -v "path/to/Pulse.vst3"
-pkgutil --check-signature Pulse-1.0.0.pkg
+pkgutil --check-signature Pulse-1.2.1.pkg
 ```
 
 ---

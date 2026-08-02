@@ -1,0 +1,31 @@
+<!doctype html>
+<!--
+Source for shot_title.png — the cover wordmark.
+
+The gradient used to be applied with `background-clip: text` on live HTML. That
+renders correctly on screen but does not survive Chrome's PDF export: under
+Quartz (Preview, Quick Look) the gradient box paints over part of the text, and
+under poppler a band of it leaks out above the letters. Rasterising the wordmark
+once sidesteps the whole class of problem — images convert to PDF reliably.
+
+Regenerate with:
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+      --headless --disable-gpu --force-device-scale-factor=3 \
+      --default-background-color=00000000 --hide-scrollbars \
+      --window-size=620,150 --screenshot=shot_title.png title.html
+-->
+<html><head><meta charset="utf-8"><style>
+  html, body { margin: 0; padding: 0; background: transparent; }
+  body { width: 620px; height: 150px; display: flex; align-items: center; justify-content: center; }
+  .t {
+    font-family: Futura, "Avenir Next Demi Bold", "Avenir Next", sans-serif;
+    font-size: 92px; font-weight: 700; letter-spacing: .11em;
+    /* The gradient spans the line box, not the glyphs. Without tightening this,
+       cap height lands mid-gradient and the yellow never reaches the letters. */
+    line-height: .78;
+    /* Trailing letter-spacing pushes the glyphs left; nudge them back. */
+    padding-left: .11em;
+    background: linear-gradient(180deg, #ffd83d 0%, #ff8a3d 46%, #ff3ccf 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+</style></head><body><div class="t">PULSE</div></body></html>

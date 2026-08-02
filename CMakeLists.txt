@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.22)
 cmake_policy(SET CMP0169 OLD)   # allow FetchContent_Populate
 cmake_policy(SET CMP0175 OLD)   # suppress add_custom_command DEPENDS warning from JUCE
 
-project(Pulse VERSION 1.0.1)
+project(Pulse VERSION 1.2.1)
 
 # Use ccache for compiler cache if available
 find_program(CCACHE_PROGRAM ccache)
@@ -32,6 +32,11 @@ juce_add_plugin(Pulse
     NEEDS_MIDI_INPUT FALSE
     NEEDS_MIDI_OUTPUT FALSE)
 
+# The user guide ships inside the binary rather than in the bundle's Resources,
+# so it survives every plugin format and needs no path resolution at runtime.
+juce_add_binary_data(PulseData SOURCES docs/PulseUserGuide.pdf)
+set_target_properties(PulseData PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
+
 target_sources(Pulse
     PRIVATE
         Source/PluginProcessor.cpp
@@ -45,6 +50,7 @@ target_compile_definitions(Pulse
 
 target_link_libraries(Pulse
     PRIVATE
+        PulseData
         juce::juce_audio_utils
     PUBLIC
         juce::juce_recommended_config_flags

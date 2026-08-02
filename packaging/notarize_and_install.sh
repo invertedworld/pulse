@@ -25,7 +25,7 @@ KEYCHAIN_PROFILE="Pulse Notary"
 # Plugin metadata (from CMakeLists)
 BUNDLE_ID="com.MarkHammond.Pulse"
 PRODUCT_NAME="Pulse"
-VERSION="1.0.1"
+VERSION="1.2.1"
 ARTIFACT_NAME="Pulse-${VERSION}"
 
 # Paths to built artifacts
@@ -63,6 +63,9 @@ sign_bundle "$VST3_PATH"
 sign_bundle "$STANDALONE_PATH"
 
 echo "=== Building component packages ==="
+# pkgbuild --component already emits these non-relocatable (an empty <relocate/>
+# with no bundles to search for), so the destination chosen on the Destination
+# Select pane is always honoured.
 pkgbuild --identifier "${BUNDLE_ID}.au.pkg" --version "$VERSION" \
     --component "$AU_PATH" \
     --install-location "/Library/Audio/Plug-Ins/Components" \

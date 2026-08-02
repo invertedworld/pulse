@@ -3,3 +3,9 @@ build/
 *.o
 *.a
 *.pkg
+# Built installers and their backups — *.pkg alone misses .pkg.bak
+packaging/output/
+# Intermediates from regenerating the user guide (see docs/guide-src/README.md)
+docs/guide-src/guide.html
+docs/guide-src/pg*.html
+docs/guide-src/pg*.png

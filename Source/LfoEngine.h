@@ -86,11 +86,14 @@ inline float sampleHoldValue(long long cycle) noexcept
 // pulseWidth (0..1) sets the square-wave duty cycle; ignored by other shapes.
 inline float waveShape(int waveIndex, double phase, float pulseWidth = 0.5f) noexcept
 {
-    if (static_cast<Wave>(waveIndex) == Wave::sampleHold)
+    const Wave wave = static_cast<Wave>(waveIndex);
+
+    // Sample & Hold indexes by cycle, so it needs the phase before wrapping.
+    if (wave == Wave::sampleHold)
         return sampleHoldValue(static_cast<long long>(std::floor(phase)));
 
     phase -= std::floor(phase);
-    switch (static_cast<Wave>(waveIndex))
+    switch (wave)
     {
         case Wave::triangle: return static_cast<float>(1.0 - std::abs(2.0 * phase - 1.0));
         case Wave::sawDown:  return static_cast<float>(1.0 - phase);
@@ -101,6 +104,8 @@ inline float waveShape(int waveIndex, double phase, float pulseWidth = 0.5f) noe
             return phase < pw ? 1.0f : 0.0f;
         }
         case Wave::sine:
+        case Wave::sampleHold:   // returned above
+        case Wave::numWaves:     // not a real shape
         default:            return static_cast<float>(0.5 + 0.5 * std::cos(2.0 * 3.14159265358979323846 * phase));
     }
 }
@@ -115,6 +120,55 @@ inline double freeHzFromNorm(double norm) noexcept
 {
     norm = norm < 0.0 ? 0.0 : (norm > 1.0 ? 1.0 : norm);
     return kMinHz * std::pow(kMaxHz / kMinHz, norm);
+}
+
+//==============================================================================
+// Low-pass filter envelope. The filter amount is bipolar (-1 .. +1):
+//   0  — off, the filter stays wide open at all times
+//   >0 — the cutoff tracks the wave: peak = open, trough = closed
+//   <0 — inverted: peak = closed, trough = open
+// The amount scales how far the cutoff is pulled down, mirroring the gain
+// formula so an amount of zero is exactly transparent.
+//
+// Returns a cutoff *position* in [0, 1], where 1 = fully open. Sharing this
+// with the editor keeps the on-screen filter curve honest.
+constexpr double kFiltMinHz = 80.0;
+constexpr double kFiltMaxHz = 20000.0;
+constexpr double kMinQ = 0.70710678118654752;   // Butterworth — flat, no peak
+constexpr double kMaxQ = 10.0;
+
+inline float filterEnv(float openness, float amount) noexcept
+{
+    const float a = std::abs(amount) > 1.0f ? 1.0f : std::abs(amount);
+    const float m = (amount >= 0.0f) ? openness : (1.0f - openness);
+    return (1.0f - a) + a * m;
+}
+
+// Envelope position -> Hz, exponential so the sweep sounds even across the
+// range. The Cutoff control sets the ceiling: at position 1 the filter sits
+// there, and the envelope pulls it down towards kFiltMinHz.
+inline double filterCutoffHz(double pos, double ceilingHz) noexcept
+{
+    pos = pos < 0.0 ? 0.0 : (pos > 1.0 ? 1.0 : pos);
+    ceilingHz = ceilingHz < kFiltMinHz ? kFiltMinHz
+                                       : (ceilingHz > kFiltMaxHz ? kFiltMaxHz : ceilingHz);
+    return kFiltMinHz * std::pow(ceilingHz / kFiltMinHz, pos);
+}
+
+// Hz -> 0..1 across the whole filter range. The display plots this rather than
+// the raw envelope position, so lowering the cutoff visibly drops the curve.
+inline float filterDisplayPos(double hz) noexcept
+{
+    hz = hz < kFiltMinHz ? kFiltMinHz : (hz > kFiltMaxHz ? kFiltMaxHz : hz);
+    return static_cast<float>(std::log(hz / kFiltMinHz) / std::log(kFiltMaxHz / kFiltMinHz));
+}
+
+// Resonance 0..1 -> Q. Starts at Butterworth so a resonance of zero leaves the
+// filter exactly as it was before the control existed.
+inline double resonanceQ(double norm) noexcept
+{
+    norm = norm < 0.0 ? 0.0 : (norm > 1.0 ? 1.0 : norm);
+    return kMinQ * std::pow(kMaxQ / kMinQ, norm);
 }
 
 //==============================================================================

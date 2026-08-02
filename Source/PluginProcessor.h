@@ -1,7 +1,9 @@
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "Filter.h"
 
 //==============================================================================
 // Pulse — an LFO tremolo / attenuator. A configurable-shape LFO (sine, saw up,
@@ -54,8 +56,14 @@ private:
     juce::AudioProcessorValueTreeState apvts;
 
     double sampleRate_ = 44100.0;
-    double phase_ = 0.0;          // continuous LFO phase (int part = cycle index)
-    float  gainSmoothed_ = 1.0f;  // one-pole smoothed gain (softens square edges)
+    double phase_ = 0.0;            // continuous LFO phase (int part = cycle index)
+    float  gainSmoothed_ = 1.0f;    // one-pole smoothed gain (softens square edges)
+    float  filterSmoothed_ = 1.0f;  // one-pole smoothed cutoff position (1 = open)
+
+    // The bus layout is limited to mono/stereo, so two is always enough; the
+    // extra slots just keep the code safe if that ever changes.
+    static constexpr int kMaxFilterChannels = 8;
+    std::array<pulse::LowpassState, kMaxFilterChannels> filters_{};
 
     std::atomic<double> lfoPhase_{0.0};
     std::atomic<double> lfoFreqHz_{1.0};

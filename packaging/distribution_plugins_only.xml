@@ -2,7 +2,9 @@
 <installer-gui-script minSpecVersion="1">
     <title>Pulse</title>
     <organization>com.MarkHammond</organization>
-    <domains enable_localSystem="true"/>
+    <!-- See distribution.xml: both domains enabled so the user can install
+         system-wide or into their own home folder. -->
+    <domains enable_currentUserHome="true" enable_localSystem="true"/>
     <options hostArchitectures="arm64,x86_64"/>
     <choices-outline>
         <line choice="vst3"/>
