@@ -115,12 +115,22 @@ productbuild --distribution "$PKG_DIR/distribution_final.xml" \
     "$PKG_FINAL"
 
 echo "=== Notarizing ==="
-xcrun notarytool submit "$OUTPUT_DIR/${ARTIFACT_NAME}.pkg" \
-    --keychain-profile "$KEYCHAIN_PROFILE" \
-    --wait
+# Locally, credentials come from the stored keychain profile. CI has no keychain
+# profile, so it supplies an app-specific password directly via the environment.
+if [[ -n "${NOTARY_PASSWORD:-}" ]]; then
+    xcrun notarytool submit "$PKG_FINAL" \
+        --apple-id "$APPLE_ID" \
+        --team-id "$TEAM_ID" \
+        --password "$NOTARY_PASSWORD" \
+        --wait
+else
+    xcrun notarytool submit "$PKG_FINAL" \
+        --keychain-profile "$KEYCHAIN_PROFILE" \
+        --wait
+fi
 
 echo "=== Stapling ==="
-xcrun stapler staple "$OUTPUT_DIR/${ARTIFACT_NAME}.pkg"
+xcrun stapler staple "$PKG_FINAL"
 
 # Cleanup intermediates
 rm -f "$PKG_DIR/Pulse.au.pkg" "$PKG_DIR/Pulse.vst3.pkg" \
