@@ -21,13 +21,13 @@ jobs:
             label: VS2026
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # JUCE is fetched at configure time. Caching it turns a multi-minute clone
       # into a few seconds; the key tracks CMakeLists.txt so bumping the pinned
       # JUCE tag invalidates it automatically.
       - name: Cache JUCE
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: build/_deps
           key: juce-${{ matrix.runner }}-${{ hashFiles('CMakeLists.txt') }}
@@ -47,7 +47,7 @@ jobs:
 
       # Uploaded wholesale rather than cherry-picked, so the exact VST3 bundle
       # layout Windows produces doesn't need hardcoding here.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Pulse-windows-${{ matrix.label }}
           path: build/Pulse_artefacts/Release/

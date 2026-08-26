@@ -684,8 +684,10 @@ void PulseAudioProcessorEditor::resized()
     // The dial's bounds deliberately start at the caption's top rather than
     // below it, so its glow has somewhere to spill. textH is 0 for Rate, which
     // carries its readout as a separate label instead of a slider text box.
-    auto placeKnob = [](const juce::Rectangle<int>& col, juce::Label& caption,
-                        juce::Slider& knob, int textH)
+    // Captures by reference for kKnobH: MSVC requires local constexpr used in a
+    // lambda to be captured, where Clang does not. Don't narrow this to [].
+    auto placeKnob = [&](const juce::Rectangle<int>& col, juce::Label& caption,
+                         juce::Slider& knob, int textH)
     {
         caption.setBounds(col.withHeight(kCaptionH));
         knob.setBounds(col.withHeight(kCaptionH + kKnobH + textH));
