@@ -21,12 +21,20 @@ FetchContent_Declare(
 FetchContent_Populate(juce)
 add_subdirectory(${juce_SOURCE_DIR} ${CMAKE_BINARY_DIR}/juce_framework)
 
+# AU only exists on Apple platforms; listing it elsewhere makes JUCE warn and
+# skip it, so pick the format list per platform instead.
+if(APPLE)
+    set(PULSE_FORMATS AU VST3 Standalone)
+else()
+    set(PULSE_FORMATS VST3 Standalone)
+endif()
+
 juce_add_plugin(Pulse
     COMPANY_NAME "Mark Hammond"
     BUNDLE_ID "com.MarkHammond.Pulse"
     PLUGIN_MANUFACTURER_CODE MHmd
     PLUGIN_CODE Puls
-    FORMATS AU VST3 Standalone
+    FORMATS ${PULSE_FORMATS}
     PRODUCT_NAME "Pulse"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE

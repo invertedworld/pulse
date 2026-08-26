@@ -1,0 +1,48 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Windows (VST3 + Standalone)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # JUCE is fetched at configure time. Caching it turns a multi-minute clone
+      # into a few seconds; the key tracks CMakeLists.txt so bumping the pinned
+      # JUCE tag invalidates it automatically.
+      - name: Cache JUCE
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: juce-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+
+      # Visual Studio is a multi-config generator, so the build type is chosen
+      # at build time via --config, not here.
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Show artefact layout
+        shell: bash
+        run: find build/Pulse_artefacts -maxdepth 4 | sort
+
+      # Uploaded wholesale rather than cherry-picked, so the exact VST3 bundle
+      # layout Windows produces doesn't need hardcoding here.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pulse-windows
+          path: build/Pulse_artefacts/Release/
+          if-no-files-found: error
+
+      # Once SignPath approves the project, signing slots in here: the unsigned
+      # artefact above becomes the input to signpath/github-action-submit-signing-request.
