@@ -9,3 +9,4 @@ packaging/output/
 docs/guide-src/guide.html
 docs/guide-src/pg*.html
 docs/guide-src/pg*.png
+spec.txt
