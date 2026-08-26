@@ -13,7 +13,6 @@ OUTPUT_DIR="$SCRIPT_DIR/output"
 # --- CONFIGURATION ---
 # Get your Team ID from: https://developer.apple.com/account → Membership
 TEAM_ID="U7KDB84YPD"
-APPLE_ID="mark.hammond@mac.com"
 
 # Certificate names from Keychain. List with: security find-identity -v -p codesigning
 DEVELOPER_ID_APP='Developer ID Application: Mark Hammond (U7KDB84YPD)'
@@ -115,19 +114,9 @@ productbuild --distribution "$PKG_DIR/distribution_final.xml" \
     "$PKG_FINAL"
 
 echo "=== Notarizing ==="
-# Locally, credentials come from the stored keychain profile. CI has no keychain
-# profile, so it supplies an app-specific password directly via the environment.
-if [[ -n "${NOTARY_PASSWORD:-}" ]]; then
-    xcrun notarytool submit "$PKG_FINAL" \
-        --apple-id "$APPLE_ID" \
-        --team-id "$TEAM_ID" \
-        --password "$NOTARY_PASSWORD" \
-        --wait
-else
-    xcrun notarytool submit "$PKG_FINAL" \
-        --keychain-profile "$KEYCHAIN_PROFILE" \
-        --wait
-fi
+xcrun notarytool submit "$PKG_FINAL" \
+    --keychain-profile "$KEYCHAIN_PROFILE" \
+    --wait
 
 echo "=== Stapling ==="
 xcrun stapler staple "$PKG_FINAL"

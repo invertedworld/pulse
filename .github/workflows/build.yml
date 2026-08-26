@@ -67,82 +67,11 @@ jobs:
           path: Pulse-Windows.zip
           if-no-files-found: error
 
-  macos:
-    name: macOS (AU + VST3 + Standalone)
-    runs-on: macos-26
-    # Tags only. This is what keeps the signing identity safe: secrets are never
-    # available to pull requests from forks, and this job never runs for them.
-    if: startsWith(github.ref, 'refs/tags/v')
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Cache JUCE
-        uses: actions/cache@v6
-        with:
-          path: build/_deps
-          key: juce-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
-
-      # Both Developer ID certificates are imported into a throwaway keychain
-      # that exists only for this run. The .p12 files are shredded immediately;
-      # the runner itself is destroyed afterwards.
-      - name: Import signing certificates
-        env:
-          CERT_APP: ${{ secrets.MACOS_CERT_APP }}
-          CERT_APP_PWD: ${{ secrets.MACOS_CERT_APP_PWD }}
-          CERT_INSTALLER: ${{ secrets.MACOS_CERT_INSTALLER }}
-          CERT_INSTALLER_PWD: ${{ secrets.MACOS_CERT_INSTALLER_PWD }}
-          KEYCHAIN_PWD: ${{ secrets.MACOS_KEYCHAIN_PWD }}
-        run: |
-          KEYCHAIN="$RUNNER_TEMP/build.keychain"
-          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN"
-          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
-          security list-keychains -d user -s "$KEYCHAIN" login.keychain
-
-          echo "$CERT_APP"       | base64 --decode > "$RUNNER_TEMP/app.p12"
-          echo "$CERT_INSTALLER" | base64 --decode > "$RUNNER_TEMP/installer.p12"
-          security import "$RUNNER_TEMP/app.p12" -k "$KEYCHAIN" \
-            -P "$CERT_APP_PWD" -T /usr/bin/codesign
-          security import "$RUNNER_TEMP/installer.p12" -k "$KEYCHAIN" \
-            -P "$CERT_INSTALLER_PWD" -T /usr/bin/productbuild
-          rm -f "$RUNNER_TEMP/app.p12" "$RUNNER_TEMP/installer.p12"
-
-          # Without this, codesign blocks on a GUI keychain prompt that nobody
-          # can answer on a headless runner.
-          security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: \
-            -s -k "$KEYCHAIN_PWD" "$KEYCHAIN" > /dev/null
-
-          security find-identity -v | sed 's/[0-9A-F]\{40\}/<hash>/'
-
-      - name: Build
-        run: ./build.sh
-
-      # Reuses the same script run locally, so CI and a hand-cut release cannot
-      # drift apart. NOTARY_PASSWORD switches it off the stored keychain profile.
-      - name: Sign, package and notarize
-        env:
-          NOTARY_PASSWORD: ${{ secrets.APPLE_NOTARY_PASSWORD }}
-        run: ./packaging/notarize_and_install.sh
-
-      - name: Verify notarization
-        run: |
-          PKG=$(ls packaging/output/Pulse-*.pkg)
-          spctl --assess --type install -vv "$PKG"
-          xcrun stapler validate "$PKG"
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: Pulse-macOS
-          path: packaging/output/Pulse-*.pkg
-          if-no-files-found: error
-
-  # A single release job so both platforms land on one page. Doing it from the
-  # build jobs would race: whichever finished first would create the release and
-  # the other would fail to.
+  # Publishing is its own job so the build stays a pure build, and so a second
+  # platform can be added later without the two racing to create one release.
   release:
     name: Publish release
-    needs: [windows, macos]
+    needs: [windows]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
