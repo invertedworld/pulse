@@ -9,16 +9,11 @@ on:
 
 jobs:
   windows:
-    name: Windows ${{ matrix.label }}
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: windows-2022
-            label: VS2022
-          - runner: windows-latest
-            label: VS2026
+    name: Windows (VST3 + Standalone)
+    # Pinned rather than windows-latest: signed release builds should not have
+    # their toolchain move underneath them. This is the image windows-latest
+    # currently points at (Windows Server 2025 / Visual Studio 2026).
+    runs-on: windows-2025
 
     steps:
       - uses: actions/checkout@v7
@@ -30,28 +25,49 @@ jobs:
         uses: actions/cache@v6
         with:
           path: build/_deps
-          key: juce-${{ matrix.runner }}-${{ hashFiles('CMakeLists.txt') }}
+          key: juce-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
 
-      # The generator is deliberately not pinned: GitHub moves the windows-latest
-      # image between Visual Studio versions, and a hardcoded generator breaks
-      # the build when it does. CMake picks the newest VS it finds.
+      # The generator is deliberately not pinned: GitHub moves its Windows images
+      # between Visual Studio versions, and a hardcoded generator breaks the
+      # build when it does. CMake picks the newest Visual Studio it finds.
       - name: Configure
         run: cmake -S . -B build -A x64
 
       - name: Build
         run: cmake --build build --config Release --parallel
 
-      - name: Show artefact layout
+      # Only the two shippable artefacts; the sibling .lib/.exp files are MSVC
+      # link intermediates and must not reach a release.
+      - name: Stage artefacts
         shell: bash
-        run: find build/Pulse_artefacts -maxdepth 4 | sort
+        run: |
+          mkdir -p staging
+          cp -r build/Pulse_artefacts/Release/VST3/Pulse.vst3 staging/
+          cp    build/Pulse_artefacts/Release/Standalone/Pulse.exe staging/
+          find staging | sort
 
-      # Uploaded wholesale rather than cherry-picked, so the exact VST3 bundle
-      # layout Windows produces doesn't need hardcoding here.
       - uses: actions/upload-artifact@v7
         with:
-          name: Pulse-windows-${{ matrix.label }}
-          path: build/Pulse_artefacts/Release/
+          name: Pulse-Windows
+          path: staging/
           if-no-files-found: error
 
-      # Once SignPath approves the project, signing slots in here: the unsigned
-      # artefact above becomes the input to signpath/github-action-submit-signing-request.
+      # Once SignPath approves the project, signing slots in here: staging/
+      # becomes the input to signpath/github-action-submit-signing-request.
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd staging
+          7z a "../Pulse-${{ github.ref_name }}-Windows.zip" Pulse.vst3 Pulse.exe
+          cd ..
+          gh release create "${{ github.ref_name }}" \
+            "Pulse-${{ github.ref_name }}-Windows.zip" \
+            --title "Pulse ${{ github.ref_name }}" \
+            --notes "Windows build. Unsigned — Windows SmartScreen will warn on first run."
+
+    permissions:
+      contents: write
