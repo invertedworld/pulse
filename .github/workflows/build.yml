@@ -9,8 +9,16 @@ on:
 
 jobs:
   windows:
-    name: Windows (VST3 + Standalone)
-    runs-on: windows-latest
+    name: Windows ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2022
+            label: VS2022
+          - runner: windows-latest
+            label: VS2026
 
     steps:
       - uses: actions/checkout@v4
@@ -22,12 +30,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/_deps
-          key: juce-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+          key: juce-${{ matrix.runner }}-${{ hashFiles('CMakeLists.txt') }}
 
-      # Visual Studio is a multi-config generator, so the build type is chosen
-      # at build time via --config, not here.
+      # The generator is deliberately not pinned: GitHub moves the windows-latest
+      # image between Visual Studio versions, and a hardcoded generator breaks
+      # the build when it does. CMake picks the newest VS it finds.
       - name: Configure
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+        run: cmake -S . -B build -A x64
 
       - name: Build
         run: cmake --build build --config Release --parallel
@@ -40,7 +49,7 @@ jobs:
       # layout Windows produces doesn't need hardcoding here.
       - uses: actions/upload-artifact@v4
         with:
-          name: Pulse-windows
+          name: Pulse-windows-${{ matrix.label }}
           path: build/Pulse_artefacts/Release/
           if-no-files-found: error
 
