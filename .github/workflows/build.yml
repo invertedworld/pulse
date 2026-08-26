@@ -78,6 +78,10 @@ jobs:
       contents: write
 
     steps:
+      # The user guide is committed rather than built, so unlike the binaries it
+      # comes from the repository instead of the build jobs' artefacts.
+      - uses: actions/checkout@v7
+
       - uses: actions/download-artifact@v7
         with:
           path: dist
@@ -90,11 +94,14 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           mv dist/Pulse-Windows.zip "dist/Pulse-${TAG}-Windows.zip"
+          cp docs/PulseUserGuide.pdf dist/
           ls -la dist
           cat > notes.md <<'EOF'
           **macOS** — installer with AU, VST3 and Standalone. Universal binary, signed and notarized.
 
           **Windows** — VST3 and Standalone, x64. Currently unsigned, so SmartScreen will warn on first run; see the code signing policy in the README.
+
+          **User guide** — also built into the plugin; the `?` in the header opens it.
           EOF
           # Tolerates a re-run against a tag whose release already exists.
           if gh release view "$TAG" --repo "$REPO" > /dev/null 2>&1; then
