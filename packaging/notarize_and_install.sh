@@ -25,7 +25,13 @@ KEYCHAIN_PROFILE="Pulse Notary"
 # Plugin metadata (from CMakeLists)
 BUNDLE_ID="com.MarkHammond.Pulse"
 PRODUCT_NAME="Pulse"
-VERSION="1.2.1"
+# Read from CMakeLists rather than copied by hand: this drifted to 1.2.1 while
+# the project moved on, and a stale version silently mislabels the installer.
+VERSION="$(sed -n 's/^project(Pulse VERSION \([0-9.]*\)).*/\1/p' "$SCRIPT_DIR/../CMakeLists.txt")"
+if [[ -z "$VERSION" ]]; then
+    echo "Error: could not read the project version from CMakeLists.txt." >&2
+    exit 1
+fi
 ARTIFACT_NAME="Pulse-${VERSION}"
 
 # Paths to built artifacts
