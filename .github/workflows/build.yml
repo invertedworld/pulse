@@ -3,16 +3,17 @@ name: Build
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
 jobs:
   windows:
-    name: Windows (VST3 + Standalone)
-    # Pinned rather than windows-latest: signed release builds should not have
-    # their toolchain move underneath them. This is the image windows-latest
-    # currently points at (Windows Server 2025 / Visual Studio 2026).
+    name: Windows (VST3)
+    # A check of every push, not a release: releases are signed (Authenticode
+    # and PACE for the AAX) on the dev machines with aax-tools, which CI lacks.
+    # Pinned rather than windows-latest, so the toolchain does not move
+    # underneath the check. This is the image windows-latest currently points
+    # at (Windows Server 2025 / Visual Studio 2026).
     runs-on: windows-2025
 
     steps:
@@ -36,14 +37,12 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
 
-      # Only the two shippable artefacts; the sibling .lib/.exp files are MSVC
-      # link intermediates and must not reach a release.
+      # Only the VST3; the sibling .lib/.exp files are MSVC link intermediates.
       - name: Stage artefacts
         shell: bash
         run: |
           mkdir -p staging
           cp -r build/Pulse_artefacts/Release/VST3/Pulse.vst3 staging/
-          cp    build/Pulse_artefacts/Release/Standalone/Pulse.exe staging/
           find staging | sort
 
       # The plugin builds on Windows but has never run there. pluginval loads it
@@ -66,47 +65,3 @@ jobs:
           name: Pulse-Windows
           path: Pulse-Windows.zip
           if-no-files-found: error
-
-  # Publishing is its own job so the build stays a pure build, and so a second
-  # platform can be added later without the two racing to create one release.
-  release:
-    name: Publish release
-    needs: [windows]
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      # The user guide is committed rather than built, so unlike the binaries it
-      # comes from the repository instead of the build jobs' artefacts.
-      - uses: actions/checkout@v7
-
-      - uses: actions/download-artifact@v7
-        with:
-          path: dist
-          merge-multiple: true
-
-      - name: Create release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
-          REPO: ${{ github.repository }}
-        run: |
-          mv dist/Pulse-Windows.zip "dist/Pulse-${TAG}-Windows.zip"
-          cp docs/PulseUserGuide.pdf dist/
-          ls -la dist
-          cat > notes.md <<'EOF'
-          **macOS** — installer with AU, VST3 and Standalone. Universal binary, signed and notarized.
-
-          **Windows** — VST3 and Standalone, x64. Currently unsigned, so SmartScreen will warn on first run; see the code signing policy in the README.
-
-          **User guide** — also built into the plugin; the `?` in the header opens it.
-          EOF
-          # Tolerates a re-run against a tag whose release already exists.
-          if gh release view "$TAG" --repo "$REPO" > /dev/null 2>&1; then
-            gh release upload "$TAG" --repo "$REPO" --clobber dist/*
-          else
-            gh release create "$TAG" --repo "$REPO" \
-              --title "Pulse ${TAG}" --notes-file notes.md dist/*
-          fi

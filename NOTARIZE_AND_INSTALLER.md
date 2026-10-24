@@ -48,19 +48,12 @@ Find your **Team ID** at [developer.apple.com/account](https://developer.apple.c
 
 ---
 
-## Step 2: App-Specific Password for Notarization
+## Step 2: Notarization Credentials
 
-1. Go to [appleid.apple.com](https://appleid.apple.com) → **Sign-In and Security** → **App-Specific Passwords**
-2. Create one (label e.g. "notarytool") and store the 16-character password (xxxx-xxxx-xxxx-xxxx)
-
-### Store credentials in Keychain
-
-```bash
-xcrun notarytool store-credentials "Pulse Notary" \
-  --apple-id "YOUR_APPLE_ID@example.com" \
-  --team-id "YOUR_10_CHAR_TEAM_ID" \
-  --password "xxxx-xxxx-xxxx-xxxx"
-```
+`packaging/notary-auth.sh` finds the credentials. By default it uses the App Store
+Connect API key at `~/.appstoreconnect/private_keys/AuthKey_<key id>.p8`, which
+does not go stale as keychain profiles holding an app-specific password do. Set
+`KEYCHAIN_PROFILE=<name>` to use a stored notarytool profile instead.
 
 ---
 
@@ -72,7 +65,6 @@ Edit `packaging/notarize_and_install.sh` and confirm:
 - `TEAM_ID` – 10-character Team ID
 - `DEVELOPER_ID_APP` – full Developer ID Application cert name
 - `DEVELOPER_ID_INSTALLER` – full Developer ID Installer cert name
-- `KEYCHAIN_PROFILE` – the profile name from `notarytool store-credentials` (`"Pulse Notary"`)
 
 See exact cert names with:
 
@@ -91,12 +83,12 @@ cd packaging
 
 The script will:
 
-1. Sign AU, VST3, and Standalone with Developer ID Application (hardened runtime + secure timestamp)
+1. Sign the AU and VST3 with Developer ID Application (hardened runtime + secure timestamp), and the AAX with PACE's wraptool through `~/code/aax-tools/aax-sign.sh` (needs the "signing" iLok)
 2. Build component `.pkg` files with `pkgbuild`
 3. Create the final installer with `productbuild`
 4. Submit for notarization with `notarytool --wait` and staple the ticket
 
-Output: `Pulse-1.2.1.pkg` in `packaging/output`.
+Output: `Pulse-<version>-build<N>.pkg` in `packaging/output`, with the AU, VST3 and AAX. The standalone app is not included.
 
 ---
 
@@ -110,7 +102,8 @@ Ensure `--timestamp` is passed to `codesign` (the script does).
 
 ### Notarization fails
 ```bash
-xcrun notarytool log SUBMISSION_UUID --keychain-profile "Pulse Notary"
+source packaging/notary-auth.sh
+xcrun notarytool log SUBMISSION_UUID "${NOTARY_AUTH[@]}"
 ```
 
 ### Verify signing

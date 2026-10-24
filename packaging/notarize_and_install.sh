@@ -1,6 +1,8 @@
 #!/bin/bash
-# Sign, package, notarize and staple the Pulse plugin.
-# Prerequisites: See NOTARIZE_AND_INSTALLER.md
+# Sign, package, notarize and staple the Pulse plugin: AU, VST3 and AAX.
+# The standalone app is built for development but never shipped.
+# Prerequisites: See NOTARIZE_AND_INSTALLER.md. The AAX also needs aax-tools in
+# ~/code/aax-tools (or MH_AAX_TOOLS=<path>) and the "signing" iLok.
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -18,8 +20,6 @@ TEAM_ID="U7KDB84YPD"
 DEVELOPER_ID_APP='Developer ID Application: Mark Hammond (U7KDB84YPD)'
 DEVELOPER_ID_INSTALLER='Developer ID Installer: Mark Hammond (U7KDB84YPD)'
 
-# Profile from: xcrun notarytool store-credentials "Pulse Notary" ...
-KEYCHAIN_PROFILE="Pulse Notary"
 
 # Plugin metadata (from CMakeLists)
 BUNDLE_ID="com.MarkHammond.Pulse"
@@ -31,18 +31,37 @@ if [[ -z "$VERSION" ]]; then
     echo "Error: could not read the project version from CMakeLists.txt." >&2
     exit 1
 fi
-ARTIFACT_NAME="Pulse-${VERSION}"
+BUILD_NUMBER="$(head -n 1 "$PROJECT_ROOT/build_number" | tr -d '[:space:]')"
+# The build number keeps a rebuild from overwriting an installer that has
+# shipped, and matches the Windows installer's name from aax-tools.
+ARTIFACT_NAME="Pulse-${VERSION}-build${BUILD_NUMBER}"
+AAX_TOOLS="${MH_AAX_TOOLS:-$HOME/code/aax-tools}"
 
 # Paths to built artifacts
 AU_PATH="$RELEASE_DIR/AU/Pulse.component"
 VST3_PATH="$RELEASE_DIR/VST3/Pulse.vst3"
-STANDALONE_PATH="$RELEASE_DIR/Standalone/Pulse.app"
+AAX_PATH="$RELEASE_DIR/AAX/Pulse.aaxplugin"
 
 # --- CHECKS ---
-if [ ! -d "$AU_PATH" ] || [ ! -d "$VST3_PATH" ]; then
+if [ ! -d "$AU_PATH" ] || [ ! -d "$VST3_PATH" ] || [ ! -d "$AAX_PATH" ]; then
     echo "Error: Build artifacts not found. Run ./build.sh first."
     exit 1
 fi
+
+if [ ! -x "$AAX_TOOLS/aax-sign.sh" ]; then
+    echo "Error: No aax-tools at $AAX_TOOLS (clone invertedworld/aax-tools there)."
+    exit 1
+fi
+"$AAX_TOOLS/aax-sign.sh" --check pulse
+
+# Checked before anything is signed, so stale credentials fail in seconds.
+# shellcheck source=notary-auth.sh
+source "$SCRIPT_DIR/notary-auth.sh"
+if ! xcrun notarytool history "${NOTARY_AUTH[@]}" > /dev/null; then
+    echo "Error: Apple refused the notary credentials ($NOTARY_DESC). See packaging/notary-auth.sh."
+    exit 1
+fi
+echo "Notary credentials: $NOTARY_DESC"
 
 if [[ "$TEAM_ID" == *"YOUR_"* ]] || [[ "$DEVELOPER_ID_APP" == *"Your Name"* ]]; then
     echo "Error: Edit this script and set TEAM_ID, DEVELOPER_ID_APP, DEVELOPER_ID_INSTALLER."
@@ -65,12 +84,15 @@ sign_bundle() {
 
 sign_bundle "$AU_PATH"
 sign_bundle "$VST3_PATH"
-sign_bundle "$STANDALONE_PATH"
+
+# wraptool signs the AAX for Pro Tools and runs codesign itself, with the
+# hardened runtime, so the AAX must not go through sign_bundle as well.
+echo "=== Signing the AAX with PACE's tools ==="
+"$AAX_TOOLS/aax-sign.sh" "$AAX_PATH" pulse
 
 echo "=== Building component packages ==="
 # pkgbuild --component already emits these non-relocatable (an empty <relocate/>
-# with no bundles to search for), so the destination chosen on the Destination
-# Select pane is always honoured.
+# with no bundles to search for), so each bundle lands exactly where it is sent.
 pkgbuild --identifier "${BUNDLE_ID}.au.pkg" --version "$VERSION" \
     --component "$AU_PATH" \
     --install-location "/Library/Audio/Plug-Ins/Components" \
@@ -81,28 +103,13 @@ pkgbuild --identifier "${BUNDLE_ID}.vst3.pkg" --version "$VERSION" \
     --install-location "/Library/Audio/Plug-Ins/VST3" \
     "$PKG_DIR/Pulse.vst3.pkg"
 
-# Standalone: fix BundleIsRelocatable so it always installs to /Applications
-if [ -d "$STANDALONE_PATH" ]; then
-    pkgbuild --analyze --root "$(dirname "$STANDALONE_PATH")" "$PKG_DIR/standalone.plist"
-    plutil -replace BundleIsRelocatable -bool NO "$PKG_DIR/standalone.plist"
-    pkgbuild --identifier "${BUNDLE_ID}.app.pkg" --version "$VERSION" \
-        --root "$(dirname "$STANDALONE_PATH")" \
-        --component-plist "$PKG_DIR/standalone.plist" \
-        --install-location "/Applications" \
-        "$PKG_DIR/Pulse.app.pkg"
-    echo "  Built standalone package"
-else
-    echo "  Skipping standalone (not built)"
-fi
+pkgbuild --identifier "${BUNDLE_ID}.aax.pkg" --version "$VERSION" \
+    --component "$AAX_PATH" \
+    --install-location "/Library/Application Support/Avid/Audio/Plug-Ins" \
+    "$PKG_DIR/Pulse.aax.pkg"
 
-# Build distribution.xml (with or without standalone)
 DIST_XML="$PKG_DIR/distribution_final.xml"
-if [ -d "$STANDALONE_PATH" ]; then
-    sed "s/VERSION_PLACEHOLDER/$VERSION/g" "$PKG_DIR/distribution.xml" > "$DIST_XML"
-else
-    # Plugins only - no standalone in installer
-    sed "s/VERSION_PLACEHOLDER/$VERSION/g" "$PKG_DIR/distribution_plugins_only.xml" > "$DIST_XML"
-fi
+sed "s/VERSION_PLACEHOLDER/$VERSION/g" "$PKG_DIR/distribution.xml" > "$DIST_XML"
 
 echo "=== Building final installer ==="
 PKG_FINAL="$OUTPUT_DIR/${ARTIFACT_NAME}.pkg"
@@ -115,7 +122,7 @@ productbuild --distribution "$PKG_DIR/distribution_final.xml" \
 
 echo "=== Notarizing ==="
 xcrun notarytool submit "$PKG_FINAL" \
-    --keychain-profile "$KEYCHAIN_PROFILE" \
+    "${NOTARY_AUTH[@]}" \
     --wait
 
 echo "=== Stapling ==="
@@ -123,8 +130,7 @@ xcrun stapler staple "$PKG_FINAL"
 
 # Cleanup intermediates
 rm -f "$PKG_DIR/Pulse.au.pkg" "$PKG_DIR/Pulse.vst3.pkg" \
-      "$PKG_DIR/Pulse.app.pkg" "$PKG_DIR/standalone.plist" \
-      "$PKG_DIR/distribution_final.xml"
+      "$PKG_DIR/Pulse.aax.pkg" "$PKG_DIR/distribution_final.xml"
 
 echo ""
 echo "Done. Installer: $OUTPUT_DIR/${ARTIFACT_NAME}.pkg"

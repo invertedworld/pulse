@@ -41,17 +41,19 @@ Builds are on the [Releases](https://github.com/invertedworld/pulse/releases) pa
 
 | Platform | Formats | Notes |
 | --- | --- | --- |
-| macOS 10.13+ | AU, VST3, Standalone | Universal binary (Apple Silicon + Intel), signed and notarized |
-| Windows 10+ | VST3, Standalone | x64. See the code signing policy below |
+| macOS 10.13+ | AU, VST3, AAX | Universal binary (Apple Silicon + Intel), signed and notarized |
+| Windows 10+ | VST3, AAX | x64, signed |
 
 ### Installing
 
-On **macOS**, run the installer. It offers a choice of destination: for all users
-(system folders, needs an admin password) or for the current user only
-(`~/Library/Audio/Plug-Ins`, no admin needed).
+On **macOS**, run the installer. It installs each chosen format for all users,
+in `/Library/Audio/Plug-Ins` and, for the AAX,
+`/Library/Application Support/Avid/Audio/Plug-Ins`, and needs an admin password.
 
-On **Windows**, copy `Pulse.vst3` into `C:\Program Files\Common Files\VST3`.
-`Pulse.exe` is the standalone and runs from anywhere.
+On **Windows**, run the installer. It installs the VST3 into
+`C:\Program Files\Common Files\VST3` and the AAX into
+`C:\Program Files\Common Files\Avid\Audio\Plug-Ins`, and can be removed
+from *Settings → Apps*.
 
 ## Building from source
 
@@ -67,18 +69,29 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ```
 
-Artefacts land in `build/Pulse_artefacts/Release/`.
+Artefacts land in `build/Pulse_artefacts/Release/`. The standalone app is built
+for development and is not part of a release.
 
-Windows builds are produced by [CI](.github/workflows/build.yml) on every push,
-so you do not need a Windows machine to build for Windows.
+The AAX format is built only when the private
+[aax-tools](https://github.com/invertedworld/aax-tools) checkout is present
+(`~/code/aax-tools`, or `-DMH_AAX_TOOLS=<path>`), since an AAX must be signed
+with PACE's tools before Pro Tools will load it. Without it, every other format
+builds as usual.
+
+[CI](.github/workflows/build.yml) builds and validates the Windows VST3 on every
+push. Release installers are built and signed on the maintainer's machines:
+`packaging/notarize_and_install.sh` on the Mac, and aax-tools'
+`build-windows.sh` for Windows.
 
 ## Code signing policy
 
 **macOS** builds are signed and notarized with an Apple Developer ID.
 
-**Windows** builds are currently **unsigned**. SmartScreen will warn on first
-run; this is expected, and you can proceed via *More info → Run anyway*. Verify
-downloads came from the Releases page above.
+**Windows** installers and plugins are signed with an Authenticode certificate
+issued to Mark Hammond.
+
+**AAX** plugins on both platforms are also signed with PACE's tools, as Pro Tools
+requires.
 
 **Privacy:** This program will not transfer any information to other networked
 systems unless specifically requested by the user or the person installing or
